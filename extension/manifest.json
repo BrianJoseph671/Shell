@@ -3,6 +3,11 @@
   "name": "The Magic Conch Shell",
   "version": "1.0.0",
   "description": "Private Gmail open tracker — the conch knows when your emails are read.",
+  "icons": {
+    "16": "conch.png",
+    "48": "conch.png",
+    "128": "conch.png"
+  },
   "permissions": ["storage"],
   "host_permissions": [
     "https://mail.google.com/*",
@@ -17,6 +22,11 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "The Magic Conch Shell"
+    "default_title": "The Magic Conch Shell",
+    "default_icon": {
+      "16": "conch.png",
+      "48": "conch.png",
+      "128": "conch.png"
+    }
   }
 }
