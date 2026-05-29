@@ -16,12 +16,33 @@ function emptyState() {
   </div>`;
 }
 
+async function updateStatus(trackedCount) {
+  const status = document.getElementById("status");
+  const ver = chrome.runtime.getManifest().version;
+  let gmail = "open Gmail tab to connect";
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.url?.includes("mail.google.com")) {
+      const ping = await chrome.tabs.sendMessage(tab.id, { type: "ping" });
+      gmail = ping?.ok
+        ? `Gmail connected · ${ping.bodies} compose area(s)`
+        : "Gmail tab open but script not loaded — refresh Gmail";
+    }
+  } catch (_) {
+    gmail = "refresh Gmail tab, then reload extension";
+  }
+
+  status.textContent = `v${ver} · ${trackedCount} saved · ${gmail}`;
+}
+
 async function render() {
   const btn = document.getElementById("refresh");
   const list = document.getElementById("list");
   btn.disabled = true;
 
   const { tracked = [] } = await chrome.storage.local.get({ tracked: [] });
+  updateStatus(tracked.length);
 
   if (!tracked.length) {
     list.innerHTML = emptyState();

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "The Magic Conch Shell",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Private Gmail open tracker — the conch knows when your emails are read.",
   "icons": {
     "16": "conch.png",
