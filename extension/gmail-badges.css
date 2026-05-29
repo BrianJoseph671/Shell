@@ -1,0 +1,28 @@
+.conch-receipt {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: -0.12em;
+  vertical-align: middle;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.conch-receipt.sent .conch-mark {
+  color: #9aa0a6;
+}
+
+.conch-receipt.read .conch-mark {
+  color: #1a9bfc;
+  font-weight: 600;
+}
+
+.conch-receipt .conch-mark {
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.conch-receipt-thread {
+  margin-left: 8px;
+}

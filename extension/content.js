@@ -1,4 +1,4 @@
-const TRACKER_BASE = "https://shell-kappa-lilac.vercel.app";
+const { TRACKER_BASE } = globalThis.ConchShared;
 const LOG = "[Magic Conch]";
 
 const BODY_SELECTORS = [
@@ -9,6 +9,9 @@ const BODY_SELECTORS = [
   '[g_editable="true"]',
   '[aria-label="Message Body"][contenteditable="true"]',
 ].join(", ");
+
+let lastRecordAt = 0;
+let lastRecordId = "";
 
 function uuid() {
   return crypto.randomUUID();
@@ -41,6 +44,10 @@ function findMessageBodies(doc) {
   });
 }
 
+function pixelUrl(id) {
+  return `${TRACKER_BASE}/api/pixel?id=${encodeURIComponent(id)}`;
+}
+
 function injectIntoBody(body) {
   const existing = body.querySelector('img[data-track-pixel="1"]');
   if (existing) return existing.dataset.trackId;
@@ -48,12 +55,12 @@ function injectIntoBody(body) {
   const id = uuid();
   const doc = body.ownerDocument || document;
   const img = doc.createElement("img");
-  img.src = `${TRACKER_BASE}/api/pixel?id=${id}`;
   img.width = 1;
   img.height = 1;
   img.alt = "";
   img.style.cssText = "width:1px;height:1px;border:0;display:block;";
   img.setAttribute("data-track-pixel", "1");
+  img.setAttribute("data-track-pending", "1");
   img.dataset.trackId = id;
   body.appendChild(img);
   return id;
@@ -78,14 +85,16 @@ function findExistingTrackId() {
   return null;
 }
 
-function findCompose(el) {
-  if (!el || !el.closest) return document;
-  return (
-    el.closest('[role="dialog"]') ||
-    el.closest("form") ||
-    el.closest('[role="main"]') ||
-    document
-  );
+function activatePixel(id) {
+  for (const doc of getAllDocuments()) {
+    for (const img of doc.querySelectorAll('img[data-track-pixel="1"]')) {
+      if (img.dataset.trackId !== id) continue;
+      if (!img.getAttribute("src")) {
+        img.src = pixelUrl(id);
+        img.removeAttribute("data-track-pending");
+      }
+    }
+  }
 }
 
 function readField(root, selectors) {
@@ -93,8 +102,11 @@ function readField(root, selectors) {
   for (const selector of list) {
     const el = root.querySelector(selector);
     if (!el) continue;
-    const val = (el.value ?? el.textContent ?? "").trim();
+    if (el.getAttribute?.("contenteditable") === "true") continue;
+    const val = (el.value ?? "").trim();
     if (val) return val;
+    const text = (el.textContent ?? "").trim();
+    if (text && text.length < 200 && !/^to$/i.test(text)) return text;
   }
   return "";
 }
@@ -104,11 +116,21 @@ function readTo() {
     const val = readField(doc, [
       'textarea[name="to"]',
       'input[name="to"]',
-      '[aria-label="To recipients"]',
-      '[aria-label^="To"]',
+      'input[email]',
       '[name="to"]',
     ]);
     if (val) return val;
+
+    for (const el of doc.querySelectorAll('[aria-label="To recipients"], [data-hovercard-id]')) {
+      const t = (el.value || el.textContent || "").trim();
+      if (t && !/^to$/i.test(t)) return t;
+    }
+
+    const chips = doc.querySelectorAll('[email], [data-email]');
+    const emails = [...chips]
+      .map((el) => el.getAttribute("email") || el.getAttribute("data-email") || "")
+      .filter(Boolean);
+    if (emails.length) return emails.join(", ");
   }
   return "";
 }
@@ -118,30 +140,48 @@ function readSubject() {
     const val = readField(doc, [
       'input[name="subjectbox"]',
       'input[name="subject"]',
-      '[aria-label^="Subject"]',
       'input[placeholder*="Subject"]',
     ]);
     if (val) return val;
+
+    const labeled = doc.querySelector('[aria-label^="Subject"]');
+    if (labeled?.value) return labeled.value.trim();
   }
   return "";
 }
 
+function captureThreadId() {
+  const m = location.hash.match(/\/([a-zA-Z0-9]+)$/);
+  if (m) return m[1];
+  const el = document.querySelector("[data-legacy-thread-id], [data-thread-perm-id]");
+  return el?.getAttribute("data-legacy-thread-id") || el?.getAttribute("data-thread-perm-id") || "";
+}
+
 function recordSend(id) {
+  const now = Date.now();
+  if (id === lastRecordId && now - lastRecordAt < 3000) return;
+  lastRecordId = id;
+  lastRecordAt = now;
+
   const entry = {
     id,
     to: readTo(),
     subject: readSubject(),
-    sentAt: Date.now(),
+    sentAt: now,
+    threadId: captureThreadId(),
   };
 
   chrome.storage.local.get({ tracked: [] }, (data) => {
     const tracked = data.tracked || [];
+    if (tracked.some((t) => t.id === id)) return;
+
     tracked.unshift(entry);
     chrome.storage.local.set({ tracked: tracked.slice(0, 200) }, () => {
       if (chrome.runtime.lastError) {
         console.warn(LOG, "storage error", chrome.runtime.lastError);
       } else {
         console.log(LOG, "saved send", entry);
+        chrome.runtime.sendMessage({ type: "trackedUpdated" }).catch(() => {});
       }
     });
   });
@@ -184,32 +224,33 @@ function matchSendButton(target) {
 }
 
 function onSendAttempt(eventTarget) {
+  if (window !== window.top) return;
+
   const btn = matchSendButton(eventTarget);
   if (!btn) return;
 
-  let id = findExistingTrackId() || injectPixelAggressive();
+  const id = findExistingTrackId() || injectPixelAggressive();
   if (!id) {
-    console.warn(LOG, "Send clicked but could not inject pixel");
+    console.warn(LOG, "Send clicked but could not find compose body");
     return;
   }
 
+  activatePixel(id);
   recordSend(id);
 }
 
-function handlePointer(e) {
-  onSendAttempt(e.target);
-}
-
-document.addEventListener("pointerdown", handlePointer, true);
-document.addEventListener("mousedown", handlePointer, true);
-document.addEventListener("click", handlePointer, true);
+document.addEventListener("mousedown", (e) => onSendAttempt(e.target), true);
 
 document.addEventListener(
   "keydown",
   (e) => {
+    if (window !== window.top) return;
     if (!((e.ctrlKey || e.metaKey) && e.key === "Enter")) return;
-    let id = findExistingTrackId() || injectPixelAggressive();
-    if (id) recordSend(id);
+
+    const id = findExistingTrackId() || injectPixelAggressive();
+    if (!id) return;
+    activatePixel(id);
+    recordSend(id);
   },
   true
 );
@@ -227,7 +268,6 @@ if (window === window.top) {
   const observer = new MutationObserver(scheduleScan);
   observer.observe(document.documentElement, { childList: true, subtree: true });
   scheduleScan();
-  setInterval(injectPixelAggressive, 3000);
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === "ping") {
@@ -240,5 +280,5 @@ if (window === window.top) {
     }
   });
 
-  console.log(LOG, "content script ready on Gmail");
+  console.log(LOG, "content script ready");
 }
