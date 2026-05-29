@@ -626,5 +626,5 @@ render();
 - Gmail proxies images through Google's cache, so the open registers when Gmail loads the proxy, and you see Google's IP/UA, not the recipient's. Treat opens as "opened in Gmail," not precise geolocation.  
 - Your own view of the sent message can trigger a false open. If this becomes annoying, add a filter later that ignores events within \~10s of `sentAt`.  
 - Image-blocking clients (some Outlook configs, "ask before loading images") will never fire the pixel, so a "Not opened" is not proof it was unread.  
-- Pixel tracking can hurt deliverability if a domain flags the tracking host. Fine for low-volume personal use; do not blast it across a 500-person cold list on a domain you care about.
+- Be aware that using pixel tracking can negatively impact deliverability if email providers identify and flag your tracking domain. It's suitable for personal, low-volume scenarios, but avoid sending tracked emails to large lists or important domains to prevent potential issues.
 
