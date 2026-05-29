@@ -12,7 +12,7 @@ function emptyState() {
   return `<div class="empty">
     <img class="empty-icon" src="conch.png" width="48" height="48" alt="Magic Conch Shell" />
     <h2>No prophecies yet</h2>
-    <p>Send a tracked email from Gmail. When someone opens it, the conch will know.</p>
+    <p>Send from Gmail on mail.google.com, then click Refresh. If sends still do not appear, reload the extension on edge://extensions.</p>
   </div>`;
 }
 
