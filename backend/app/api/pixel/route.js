@@ -37,9 +37,13 @@ export async function GET(request) {
     headers: {
       "Content-Type": "image/gif",
       "Content-Length": String(PIXEL.length),
-      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      "Cache-Control": "private, no-store, no-cache, must-revalidate, max-age=0",
+      "CDN-Cache-Control": "no-store",
+      "Surrogate-Control": "no-store",
       Pragma: "no-cache",
       Expires: "0",
+      ETag: `"${Date.now()}"`,
+      Vary: "*",
     },
   });
 }

@@ -1,28 +1,138 @@
+/* Superhuman-inspired read receipt UI */
 .conch-receipt {
   display: inline-flex;
   align-items: center;
+  gap: 3px;
   margin-left: 6px;
-  font-size: 14px;
-  line-height: 1;
-  letter-spacing: -0.12em;
   vertical-align: middle;
   user-select: none;
   flex-shrink: 0;
+  cursor: default;
+  position: relative;
 }
 
-.conch-receipt.sent .conch-mark {
+.conch-receipt-thread,
+.conch-receipt-inline {
+  margin-left: 4px;
+}
+
+.conch-diamond {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid #9aa0a6;
+  transform: rotate(45deg);
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.conch-mark {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: -0.14em;
   color: #9aa0a6;
+  font-weight: 400;
 }
 
 .conch-receipt.read .conch-mark {
-  color: #1a9bfc;
-  font-weight: 600;
+  color: #9aa0a6;
 }
 
-.conch-receipt .conch-mark {
-  font-family: "Segoe UI", system-ui, sans-serif;
+.conch-receipt.sent .conch-diamond {
+  display: none;
 }
 
-.conch-receipt-thread {
-  margin-left: 8px;
+.conch-receipt.sent .conch-mark {
+  letter-spacing: 0;
+}
+
+/* Hover popover */
+.conch-popover {
+  position: fixed;
+  z-index: 2147483646;
+  min-width: 280px;
+  max-width: 320px;
+  max-height: 320px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #3c4043;
+  border: 1px solid #5f6368;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  font-family: "Google Sans", "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  color: #e8eaed;
+  pointer-events: auto;
+}
+
+.conch-popover-header {
+  padding: 12px 14px 10px;
+  font-size: 13px;
+  font-weight: 400;
+  color: #9aa0a6;
+  border-bottom: 1px solid #5f6368;
+  flex-shrink: 0;
+}
+
+.conch-popover-list {
+  overflow-y: auto;
+  padding: 4px 0 6px;
+  flex: 1;
+}
+
+.conch-popover-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+}
+
+.conch-popover-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.conch-popover-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: #9aa0a6;
+}
+
+.conch-popover-icon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.conch-popover-name {
+  flex: 1;
+  color: #e8eaed;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conch-popover-time {
+  flex-shrink: 0;
+  color: #9aa0a6;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.conch-popover-empty {
+  padding: 14px;
+  color: #9aa0a6;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.conch-popover-note {
+  padding: 8px 14px 10px;
+  font-size: 11px;
+  color: #80868b;
+  border-top: 1px solid #5f6368;
+  line-height: 1.4;
 }
