@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Mini Gmail Open Tracker",
+  "version": "1.0.0",
+  "description": "Private 1x1 pixel open tracking for emails you send in Gmail.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://mail.google.com/*",
+    "https://YOUR-APP.vercel.app/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://mail.google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Gmail Open Tracker"
+  }
+}
