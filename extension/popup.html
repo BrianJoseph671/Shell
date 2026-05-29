@@ -1,22 +1,240 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Magic Conch Shell</title>
     <style>
-      body { font: 13px/1.4 -apple-system, system-ui, sans-serif; width: 360px; margin: 0; padding: 12px; }
-      h1 { font-size: 14px; margin: 0 0 8px; }
-      button { font-size: 11px; margin-bottom: 10px; cursor: pointer; }
-      .row { border-bottom: 1px solid #eee; padding: 8px 0; }
-      .subj { font-weight: 600; }
-      .meta { color: #666; font-size: 11px; }
-      .opens { color: #137333; font-weight: 600; }
-      .none { color: #999; }
+      :root {
+        --bg: #050505;
+        --surface: #111111;
+        --surface-raised: #1a1a1a;
+        --border: #2e2e2e;
+        --border-soft: #1f1f1f;
+        --text: #f7f7f7;
+        --muted: #8a8a8a;
+        --dim: #5c5c5c;
+        --accent: #ffffff;
+        --glow: rgba(255, 255, 255, 0.06);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        font: 13px/1.45 "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        width: 380px;
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 16px 14px;
+        border-bottom: 1px solid var(--border-soft);
+        background:
+          radial-gradient(ellipse 120% 80% at 50% -40%, var(--glow), transparent 55%),
+          linear-gradient(180deg, #0d0d0d 0%, var(--bg) 100%);
+      }
+
+      .logo {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        filter: drop-shadow(0 2px 8px rgba(255, 255, 255, 0.12));
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      .brand p {
+        margin: 2px 0 0;
+        font-size: 11px;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 10px 16px 12px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+
+      .toolbar label {
+        font-size: 11px;
+        color: var(--muted);
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      button#refresh {
+        font: inherit;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--bg);
+        background: var(--accent);
+        border: none;
+        border-radius: 999px;
+        padding: 7px 14px;
+        cursor: pointer;
+        transition: transform 0.12s ease, opacity 0.12s ease, box-shadow 0.12s ease;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+      }
+
+      button#refresh:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(255, 255, 255, 0.15);
+      }
+
+      button#refresh:active {
+        transform: translateY(0);
+      }
+
+      button#refresh:disabled {
+        opacity: 0.55;
+        cursor: wait;
+        transform: none;
+      }
+
+      #list {
+        max-height: 340px;
+        overflow-y: auto;
+        padding: 4px 0 8px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+      }
+
+      #list::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      #list::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+      }
+
+      .row {
+        margin: 8px 12px;
+        padding: 12px 14px;
+        background: var(--surface);
+        border: 1px solid var(--border-soft);
+        border-radius: 10px;
+        transition: border-color 0.15s ease, background 0.15s ease;
+      }
+
+      .row:hover {
+        border-color: var(--border);
+        background: var(--surface-raised);
+      }
+
+      .row.opened {
+        border-color: #3a3a3a;
+        box-shadow: inset 3px 0 0 var(--accent);
+      }
+
+      .subj {
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 6px;
+        line-height: 1.35;
+        word-break: break-word;
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 11px;
+        margin-top: 3px;
+      }
+
+      .opens {
+        color: var(--text);
+        font-weight: 600;
+        font-size: 11px;
+        letter-spacing: 0.02em;
+      }
+
+      .opens::before {
+        content: "● ";
+        color: var(--accent);
+        font-size: 8px;
+        vertical-align: middle;
+      }
+
+      .none {
+        color: var(--dim);
+        font-style: italic;
+      }
+
+      .empty {
+        text-align: center;
+        padding: 28px 24px 32px;
+      }
+
+      .empty .empty-icon {
+        width: 48px;
+        height: 48px;
+        margin: 0 auto 12px;
+        opacity: 0.35;
+      }
+
+      .empty h2 {
+        margin: 0 0 6px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .empty p {
+        margin: 0;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .footer {
+        padding: 8px 16px 12px;
+        border-top: 1px solid var(--border-soft);
+        font-size: 10px;
+        color: var(--dim);
+        text-align: center;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
     </style>
   </head>
   <body>
-    <h1>Tracked emails</h1>
-    <button id="refresh">Refresh opens</button>
-    <div id="list"></div>
+    <header class="header">
+      <img class="logo" src="conch.svg" width="36" height="36" alt="" />
+      <div class="brand">
+        <h1>The Magic Conch Shell</h1>
+        <p>Gmail open tracker</p>
+      </div>
+    </header>
+
+    <div class="toolbar">
+      <label for="refresh">Tracked sends</label>
+      <button type="button" id="refresh">Refresh opens</button>
+    </div>
+
+    <div id="list" aria-live="polite"></div>
+
+    <footer class="footer">The conch has spoken</footer>
+
     <script src="popup.js"></script>
   </body>
 </html>

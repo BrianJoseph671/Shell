@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Mini Gmail Open Tracker",
+  "name": "The Magic Conch Shell",
   "version": "1.0.0",
-  "description": "Private 1x1 pixel open tracking for emails you send in Gmail.",
+  "description": "Private Gmail open tracker — the conch knows when your emails are read.",
   "permissions": ["storage"],
   "host_permissions": [
     "https://mail.google.com/*",
@@ -17,6 +17,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Gmail Open Tracker"
+    "default_title": "The Magic Conch Shell"
   }
 }
