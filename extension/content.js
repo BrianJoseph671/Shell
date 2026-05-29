@@ -1,4 +1,4 @@
-const TRACKER_BASE = "https://YOUR-APP.vercel.app";
+const TRACKER_BASE = "https://shell-kappa-lilac.vercel.app";
 
 function uuid() {
   return crypto.randomUUID();

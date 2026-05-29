@@ -6,7 +6,7 @@
   "permissions": ["storage"],
   "host_permissions": [
     "https://mail.google.com/*",
-    "https://YOUR-APP.vercel.app/*"
+    "https://shell-kappa-lilac.vercel.app/*"
   ],
   "content_scripts": [
     {
