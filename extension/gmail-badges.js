@@ -1,7 +1,7 @@
 (function () {
   if (window !== window.top) return;
 
-  const { TRACKER_BASE, opensSummary } = globalThis.ConchShared;
+  const { TRACKER_BASE, opensSummary, displayName, normSubject } = globalThis.ConchShared;
   const LOG = "[Magic Conch badges]";
 
   const LAPTOP_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="12" rx="1.5"/><path d="M2 19h20"/></svg>`;
@@ -13,6 +13,15 @@
   let popover = null;
   let popoverEntry = null;
   let hoverPollTimer = null;
+  let hideTimer = null;
+  let hoverAnchor = null;
+
+  function threadIdFromHash() {
+    const hashMatch = location.hash.match(/#(?:sent|inbox|label\/[^/]+|search\/[^/]+)\/([a-zA-Z0-9]+)/);
+    if (hashMatch) return hashMatch[1];
+    const tail = location.hash.match(/\/([a-zA-Z0-9]{10,})$/);
+    return tail ? tail[1] : "";
+  }
 
   function isSentView() {
     const h = location.hash;
@@ -62,32 +71,40 @@
     return { count, last, valid, read: count > 0 };
   }
 
+  function findEntryForThreadId(threadId) {
+    if (!threadId) return null;
+    const matches = tracked.filter((t) => t.threadId === threadId);
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) return matches.sort((a, b) => b.sentAt - a.sentAt)[0];
+    return null;
+  }
+
   function findEntryForSubject(subjectText) {
-    const hash = location.hash;
-    const threadInUrl = hash.match(/\/([a-zA-Z0-9]+)$/);
-    if (threadInUrl) {
-      const byThread = tracked.find((t) => t.threadId && t.threadId === threadInUrl[1]);
-      if (byThread) return byThread;
-    }
-
-    const norm = globalThis.ConchShared.normSubject(subjectText);
+    const norm = normSubject(subjectText);
     if (!norm) return null;
-
-    const candidates = tracked.filter((t) => globalThis.ConchShared.normSubject(t.subject) === norm);
+    const candidates = tracked.filter((t) => normSubject(t.subject) === norm);
     if (!candidates.length) return null;
     candidates.sort((a, b) => b.sentAt - a.sentAt);
     return candidates[0];
   }
 
-  function displayName(toField) {
-    const raw = (toField || "").trim();
-    if (!raw) return "Recipient";
-    const first = raw.split(",")[0].trim();
-    if (first.includes("@")) {
-      const local = first.split("@")[0];
-      return local.charAt(0).toUpperCase() + local.slice(1);
-    }
-    return first;
+  function getRowThreadId(row) {
+    return (
+      row.getAttribute("data-thread-id") ||
+      row.getAttribute("data-legacy-thread-id") ||
+      row.querySelector("[data-thread-id]")?.getAttribute("data-thread-id") ||
+      row.querySelector("[data-legacy-thread-id]")?.getAttribute("data-legacy-thread-id") ||
+      ""
+    );
+  }
+
+  function findEntryForRow(row) {
+    const tid = getRowThreadId(row);
+    const byThread = findEntryForThreadId(tid);
+    if (byThread) return byThread;
+
+    const subject = getRowSubject(row);
+    return findEntryForSubject(subject);
   }
 
   function fmtSuperhuman(ts) {
@@ -109,13 +126,21 @@
     if (popover) return popover;
     popover = document.createElement("div");
     popover.className = "conch-popover";
-    popover.hidden = true;
     document.body.appendChild(popover);
+
+    popover.addEventListener("mouseenter", () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+      }
+    });
+
+    popover.addEventListener("mouseleave", () => hidePopover());
 
     document.addEventListener(
       "mousedown",
       (e) => {
-        if (popover.hidden) return;
+        if (!popover?.classList.contains("is-open")) return;
         if (popover.contains(e.target)) return;
         if (e.target.closest(".conch-receipt")) return;
         hidePopover();
@@ -123,39 +148,36 @@
       true
     );
 
-    popover.addEventListener("mouseleave", () => hidePopover());
     return popover;
   }
 
   function positionPopover(anchor) {
-    const rect = anchor.getBoundingClientRect();
     const pop = ensurePopover();
-    pop.style.visibility = "hidden";
-    pop.hidden = false;
+    pop.classList.add("is-open");
 
-    const pw = pop.offsetWidth || 300;
-    const ph = pop.offsetHeight || 200;
+    const rect = anchor.getBoundingClientRect();
+    const pw = pop.offsetWidth || 220;
+    const ph = pop.offsetHeight || 120;
     let left = rect.left;
-    let top = rect.bottom + 6;
+    let top = rect.bottom + 4;
 
     if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
     if (left < 8) left = 8;
-    if (top + ph > window.innerHeight - 8) top = rect.top - ph - 6;
+    if (top + ph > window.innerHeight - 8) top = rect.top - ph - 4;
 
     pop.style.left = `${left}px`;
     pop.style.top = `${top}px`;
-    pop.style.visibility = "visible";
   }
 
   function renderPopover(entry) {
     const pop = ensurePopover();
     const st = statusFor(entry);
-    const name = displayName(entry.to);
+    const name = displayName(entry);
 
     if (!st.read) {
       pop.innerHTML = `
         <div class="conch-popover-header">Not opened yet</div>
-        <div class="conch-popover-empty">Sent ${fmtSuperhuman(entry.sentAt)}.<br/>Opens appear 15+ seconds after send when the recipient loads images.</div>
+        <div class="conch-popover-empty">Sent ${fmtSuperhuman(entry.sentAt)}.</div>
       `;
       return;
     }
@@ -172,23 +194,22 @@
       )
       .join("");
 
-    const note =
-      st.valid.length < 2
-        ? `<div class="conch-popover-note">Gmail often caches images after the first open, so repeat views may not register.</div>`
-        : "";
-
     pop.innerHTML = `
       <div class="conch-popover-header">${openCountLabel(st.count)}</div>
       <div class="conch-popover-list">${rows}</div>
-      ${note}
     `;
   }
 
   function showPopover(anchor, entry) {
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+
+    hoverAnchor = anchor;
     popoverEntry = entry;
     renderPopover(entry);
     positionPopover(anchor);
-    ensurePopover().hidden = false;
 
     fetchOpens().then(() => {
       if (popoverEntry?.id === entry.id) renderPopover(entry);
@@ -197,18 +218,53 @@
     if (hoverPollTimer) clearInterval(hoverPollTimer);
     hoverPollTimer = setInterval(() => {
       fetchOpens().then(() => {
-        if (popoverEntry?.id === entry.id) renderPopover(entry);
+        if (popoverEntry?.id === entry.id) {
+          renderPopover(entry);
+          if (hoverAnchor) positionPopover(hoverAnchor);
+        }
       });
-    }, 5000);
+    }, 3000);
   }
 
   function hidePopover() {
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
     if (hoverPollTimer) {
       clearInterval(hoverPollTimer);
       hoverPollTimer = null;
     }
     popoverEntry = null;
-    if (popover) popover.hidden = true;
+    hoverAnchor = null;
+    if (popover) popover.classList.remove("is-open");
+  }
+
+  function scheduleHidePopover() {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      if (popover?.matches(":hover")) return;
+      hidePopover();
+    }, 150);
+  }
+
+  function makeChecks(read) {
+    if (!read) {
+      const single = document.createElement("span");
+      single.className = "conch-check-single";
+      single.textContent = "✓";
+      return single;
+    }
+
+    const wrap = document.createElement("span");
+    wrap.className = "conch-checks";
+    for (let i = 0; i < 2; i++) {
+      const c = document.createElement("span");
+      c.className = "conch-check";
+      c.textContent = "✓";
+      wrap.appendChild(c);
+    }
+    return wrap;
   }
 
   function badgeEl(entry, placement) {
@@ -224,32 +280,55 @@
       wrap.appendChild(diamond);
     }
 
-    const mark = document.createElement("span");
-    mark.className = "conch-mark";
-    mark.textContent = st.read ? "✓✓" : "✓";
-    wrap.appendChild(mark);
+    wrap.appendChild(makeChecks(st.read));
 
     wrap.addEventListener("mouseenter", () => showPopover(wrap, entry));
     wrap.addEventListener("mouseleave", (e) => {
       if (e.relatedTarget && popover?.contains(e.relatedTarget)) return;
-      setTimeout(() => {
-        if (popover?.matches(":hover")) return;
-        hidePopover();
-      }, 120);
+      scheduleHidePopover();
     });
 
     return wrap;
   }
 
+  function updateBadgeInPlace(wrap, entry) {
+    const st = statusFor(entry);
+    wrap.classList.toggle("read", st.read);
+    wrap.classList.toggle("sent", !st.read);
+
+    let diamond = wrap.querySelector(".conch-diamond");
+    if (st.read && !diamond) {
+      diamond = document.createElement("span");
+      diamond.className = "conch-diamond";
+      diamond.setAttribute("aria-hidden", "true");
+      wrap.insertBefore(diamond, wrap.firstChild);
+    } else if (!st.read && diamond) {
+      diamond.remove();
+    }
+
+    const oldChecks = wrap.querySelector(".conch-checks, .conch-check-single");
+    if (oldChecks) oldChecks.remove();
+    wrap.appendChild(makeChecks(st.read));
+  }
+
   function attachBadge(anchor, entry, placement) {
     if (!anchor || !entry) return;
     const existing = anchor.querySelector(`[data-conch-id="${entry.id}"]`);
-    const next = badgeEl(entry, placement);
     if (existing) {
-      existing.replaceWith(next);
-    } else {
-      anchor.appendChild(next);
+      updateBadgeInPlace(existing, entry);
+      return;
     }
+
+    const next = badgeEl(entry, placement);
+    anchor.appendChild(next);
+  }
+
+  function updateAllBadges() {
+    document.querySelectorAll(".conch-receipt[data-conch-id]").forEach((wrap) => {
+      const id = wrap.getAttribute("data-conch-id");
+      const entry = tracked.find((t) => t.id === id);
+      if (entry) updateBadgeInPlace(wrap, entry);
+    });
   }
 
   function getRowSubject(row) {
@@ -266,8 +345,7 @@
 
     const rows = document.querySelectorAll("tr.zA, tr[role='row']");
     for (const row of rows) {
-      const subject = getRowSubject(row);
-      const entry = findEntryForSubject(subject);
+      const entry = findEntryForRow(row);
       if (!entry) continue;
 
       const cell =
@@ -279,26 +357,36 @@
   }
 
   function paintThreadHeader() {
+    const tid = threadIdFromHash();
+    let entry = findEntryForThreadId(tid);
+
+    if (!entry) {
+      const header =
+        document.querySelector("h2.hP") ||
+        document.querySelector("[data-legacy-thread-id]")?.closest("div")?.querySelector("h2") ||
+        document.querySelector(".ha h2");
+      if (header) {
+        entry = findEntryForSubject((header.textContent || "").trim());
+      }
+    }
+
+    if (!entry) return;
+
     const header =
       document.querySelector("h2.hP") ||
       document.querySelector("[data-legacy-thread-id]")?.closest("div")?.querySelector("h2") ||
       document.querySelector(".ha h2");
-
-    if (!header) return;
-
-    const subject = (header.textContent || "").trim();
-    const entry = findEntryForSubject(subject);
-    if (!entry) return;
-
-    attachBadge(header, entry, "conch-receipt-thread");
+    if (header) attachBadge(header, entry, "conch-receipt-thread");
   }
 
   function paintThreadSentMessages() {
-    const header = document.querySelector("h2.hP");
-    if (!header) return;
+    const tid = threadIdFromHash();
+    let entry = findEntryForThreadId(tid);
 
-    const subject = (header.textContent || "").trim();
-    const entry = findEntryForSubject(subject);
+    if (!entry) {
+      const header = document.querySelector("h2.hP");
+      if (header) entry = findEntryForSubject((header.textContent || "").trim());
+    }
     if (!entry) return;
 
     const sentBlocks = document.querySelectorAll("div.gA.acV, div.gA.gt");
@@ -325,25 +413,29 @@
     }, 300);
   }
 
-  async function refresh() {
+  async function fetchAndPaint() {
     await loadTracked();
     await fetchOpens();
-    schedulePaint();
-    if (popoverEntry) renderPopover(popoverEntry);
+    updateAllBadges();
+    paintAll();
+    if (popoverEntry) {
+      renderPopover(popoverEntry);
+      if (hoverAnchor) positionPopover(hoverAnchor);
+    }
   }
 
   function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(refresh, 15000);
+    pollTimer = setInterval(fetchAndPaint, 5000);
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.tracked) refresh();
+    if (area === "local" && changes.tracked) fetchAndPaint();
   });
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === "refreshBadges" || msg?.type === "trackedUpdated") {
-      refresh().then(() => sendResponse({ ok: true }));
+      fetchAndPaint().then(() => sendResponse({ ok: true }));
       return true;
     }
   });
@@ -353,10 +445,16 @@
 
   window.addEventListener("hashchange", () => {
     hidePopover();
-    refresh();
+    fetchAndPaint();
   });
 
-  refresh();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") fetchAndPaint();
+  });
+
+  window.addEventListener("focus", () => fetchAndPaint());
+
+  fetchAndPaint();
   startPolling();
   console.log(LOG, "badges ready");
 })();

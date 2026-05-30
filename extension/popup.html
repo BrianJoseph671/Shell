@@ -10,7 +10,6 @@
         --text: #f7f7f7;
         --muted: #8a8a8a;
         --dim: #5c5c5c;
-        --accent: #ffffff;
         --glow: rgba(255, 255, 255, 0.06);
         --border-soft: #1f1f1f;
       }
@@ -21,7 +20,7 @@
 
       body {
         font: 13px/1.45 "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-        width: 320px;
+        width: 300px;
         margin: 0;
         padding: 0;
         background: var(--bg);
@@ -72,7 +71,6 @@
       }
 
       .legend {
-        margin: 0 0 14px;
         padding: 10px 12px;
         border: 1px solid var(--border-soft);
         border-radius: 8px;
@@ -81,7 +79,7 @@
       }
 
       .legend span {
-        margin-right: 12px;
+        margin-right: 10px;
       }
 
       .legend .sent {
@@ -89,28 +87,7 @@
       }
 
       .legend .read {
-        color: #1a9bfc;
-        font-weight: 600;
-      }
-
-      button#refresh {
-        font: inherit;
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: var(--bg);
-        background: var(--accent);
-        border: none;
-        border-radius: 999px;
-        padding: 8px 16px;
-        cursor: pointer;
-        width: 100%;
-      }
-
-      button#refresh:disabled {
-        opacity: 0.55;
-        cursor: wait;
+        color: #9aa0a6;
       }
 
       .footer {
@@ -133,12 +110,11 @@
     </header>
 
     <div class="body">
-      <p>Read receipts appear in Gmail next to your sent messages — look for checkmarks in <strong>Sent</strong> and when viewing a thread.</p>
+      <p>Checkmarks appear in Gmail on <strong>Sent</strong> and in open threads. Hover for open history — updates automatically every few seconds.</p>
       <div class="legend">
         <span class="sent">✓ sent</span>
-        <span class="read">◇ ✓✓ read — hover for history</span>
+        <span class="read">◇ ✓✓ read</span>
       </div>
-      <button type="button" id="refresh">Refresh now</button>
     </div>
 
     <footer class="footer" id="status">Loading…</footer>

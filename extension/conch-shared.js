@@ -18,11 +18,31 @@
     return (s || "").replace(/\s+/g, " ").trim().toLowerCase();
   }
 
+  function parseEmail(str) {
+    const raw = (str || "").trim();
+    const angle = raw.match(/<([^>]+@[^>]+)>/);
+    if (angle) return angle[1].trim();
+    const email = raw.match(/[\w.+-]+@[\w.-]+\.\w+/);
+    return email ? email[0] : "";
+  }
+
+  function displayName(entry) {
+    if (entry?.recipientName) {
+      const first = entry.recipientName.trim().split(/\s+/)[0];
+      if (first) return first;
+    }
+    const email = parseEmail(entry?.to);
+    if (email) return email;
+    return "Recipient";
+  }
+
   global.ConchShared = {
     TRACKER_BASE,
     GRACE_MS,
     validOpens,
     opensSummary,
     normSubject,
+    parseEmail,
+    displayName,
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

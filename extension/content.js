@@ -111,7 +111,10 @@ function readField(root, selectors) {
   return "";
 }
 
-function readTo() {
+function readRecipient() {
+  let to = "";
+  let recipientName = "";
+
   for (const doc of getAllDocuments()) {
     const val = readField(doc, [
       'textarea[name="to"]',
@@ -119,20 +122,31 @@ function readTo() {
       'input[email]',
       '[name="to"]',
     ]);
-    if (val) return val;
+    if (val) to = val;
 
-    for (const el of doc.querySelectorAll('[aria-label="To recipients"], [data-hovercard-id]')) {
-      const t = (el.value || el.textContent || "").trim();
-      if (t && !/^to$/i.test(t)) return t;
+    for (const chip of doc.querySelectorAll(".vR, .afV, [email], [data-email]")) {
+      const email = chip.getAttribute("email") || chip.getAttribute("data-email") || "";
+      const nameEl = chip.querySelector(".vT, .afW, span[email]");
+      const chipName = nameEl
+        ? (nameEl.textContent || "").trim()
+        : (chip.textContent || "").replace(email, "").trim();
+
+      if (email && !to.includes(email)) {
+        to = to ? `${to}, ${email}` : email;
+      }
+      if (chipName && chipName.length > 1 && !chipName.includes("@") && !recipientName) {
+        recipientName = chipName;
+      }
     }
 
-    const chips = doc.querySelectorAll('[email], [data-email]');
-    const emails = [...chips]
-      .map((el) => el.getAttribute("email") || el.getAttribute("data-email") || "")
-      .filter(Boolean);
-    if (emails.length) return emails.join(", ");
+    if (!recipientName && to) {
+      const angle = to.match(/^([^<]+)</);
+      if (angle) recipientName = angle[1].trim().replace(/"/g, "");
+      else if (!to.includes("@")) recipientName = to.split(",")[0].trim();
+    }
   }
-  return "";
+
+  return { to, recipientName };
 }
 
 function readSubject() {
@@ -151,10 +165,37 @@ function readSubject() {
 }
 
 function captureThreadId() {
-  const m = location.hash.match(/\/([a-zA-Z0-9]+)$/);
-  if (m) return m[1];
+  const hashMatch = location.hash.match(/#(?:sent|inbox|label\/[^/]+|search\/[^/]+)\/([a-zA-Z0-9]+)/);
+  if (hashMatch) return hashMatch[1];
+
+  const tail = location.hash.match(/\/([a-zA-Z0-9]{10,})$/);
+  if (tail) return tail[1];
+
   const el = document.querySelector("[data-legacy-thread-id], [data-thread-perm-id]");
   return el?.getAttribute("data-legacy-thread-id") || el?.getAttribute("data-thread-perm-id") || "";
+}
+
+function updateThreadId(entryId, threadId) {
+  if (!threadId) return;
+  chrome.storage.local.get({ tracked: [] }, (data) => {
+    const tracked = data.tracked || [];
+    const idx = tracked.findIndex((t) => t.id === entryId);
+    if (idx === -1) return;
+    if (tracked[idx].threadId === threadId) return;
+    tracked[idx].threadId = threadId;
+    chrome.storage.local.set({ tracked }, () => {
+      chrome.runtime.sendMessage({ type: "trackedUpdated" }).catch(() => {});
+    });
+  });
+}
+
+function scheduleThreadIdCapture(entryId) {
+  [2000, 5000].forEach((ms) => {
+    setTimeout(() => {
+      const tid = captureThreadId();
+      if (tid) updateThreadId(entryId, tid);
+    }, ms);
+  });
 }
 
 function recordSend(id) {
@@ -163,12 +204,15 @@ function recordSend(id) {
   lastRecordId = id;
   lastRecordAt = now;
 
+  const { to, recipientName } = readRecipient();
+
   const entry = {
     id,
-    to: readTo(),
+    to,
+    recipientName,
     subject: readSubject(),
     sentAt: now,
-    threadId: captureThreadId(),
+    threadId: captureThreadId() || "",
   };
 
   chrome.storage.local.get({ tracked: [] }, (data) => {
@@ -182,6 +226,7 @@ function recordSend(id) {
       } else {
         console.log(LOG, "saved send", entry);
         chrome.runtime.sendMessage({ type: "trackedUpdated" }).catch(() => {});
+        scheduleThreadIdCapture(id);
       }
     });
   });
