@@ -48,21 +48,64 @@ function pixelUrl(id) {
   return `${TRACKER_BASE}/api/pixel?id=${encodeURIComponent(id)}`;
 }
 
+// Spacer pushes the pixel below Gmail inbox preview so it loads when the full message is opened.
+const SPACER_HEIGHT_PX = 1000;
+
+function createSpacerElement(doc) {
+  const wrap = doc.createElement("div");
+  wrap.setAttribute("data-conch-spacer", "1");
+  wrap.setAttribute("aria-hidden", "true");
+  wrap.style.cssText =
+    "display:block;line-height:0;font-size:0;max-height:0;overflow:hidden;mso-hide:all;";
+
+  const table = doc.createElement("table");
+  table.setAttribute("role", "presentation");
+  table.setAttribute("cellpadding", "0");
+  table.setAttribute("cellspacing", "0");
+  table.setAttribute("border", "0");
+  table.style.borderCollapse = "collapse";
+
+  const td = doc.createElement("td");
+  td.setAttribute("height", String(SPACER_HEIGHT_PX));
+  td.style.height = `${SPACER_HEIGHT_PX}px`;
+  td.style.lineHeight = `${SPACER_HEIGHT_PX}px`;
+  td.style.fontSize = "0";
+  td.innerHTML = "&#8203;";
+
+  const tr = doc.createElement("tr");
+  tr.appendChild(td);
+  const tbody = doc.createElement("tbody");
+  tbody.appendChild(tr);
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  return wrap;
+}
+
 function injectIntoBody(body) {
   const existing = body.querySelector('img[data-track-pixel="1"]');
   if (existing) return existing.dataset.trackId;
 
   const id = uuid();
   const doc = body.ownerDocument || document;
+
+  const block = doc.createElement("div");
+  block.setAttribute("data-conch-track-block", "1");
+  block.setAttribute("contenteditable", "false");
+
+  block.appendChild(createSpacerElement(doc));
+
   const img = doc.createElement("img");
   img.width = 1;
   img.height = 1;
   img.alt = "";
+  img.loading = "lazy";
   img.style.cssText = "width:1px;height:1px;border:0;display:block;";
   img.setAttribute("data-track-pixel", "1");
   img.setAttribute("data-track-pending", "1");
   img.dataset.trackId = id;
-  body.appendChild(img);
+  block.appendChild(img);
+
+  body.appendChild(block);
   return id;
 }
 

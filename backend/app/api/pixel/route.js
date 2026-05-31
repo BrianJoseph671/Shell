@@ -23,6 +23,9 @@ export async function GET(request) {
       ts: Date.now(),
       ua: request.headers.get("user-agent") || "",
       ip: request.headers.get("x-forwarded-for") || "",
+      referer: request.headers.get("referer") || "",
+      secFetchMode: request.headers.get("sec-fetch-mode") || "",
+      secFetchDest: request.headers.get("sec-fetch-dest") || "",
     };
 
     try {

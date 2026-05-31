@@ -15,6 +15,33 @@
   let hoverPollTimer = null;
   let hideTimer = null;
   let hoverAnchor = null;
+  let stopped = false;
+
+  function extensionAlive() {
+    try {
+      return Boolean(chrome.runtime?.id);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isContextInvalidated(err) {
+    const msg = String(err?.message || err || "");
+    return msg.includes("Extension context invalidated");
+  }
+
+  function stopAllTimers() {
+    stopped = true;
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    if (paintTimer) clearTimeout(paintTimer);
+    paintTimer = null;
+    if (hoverPollTimer) clearInterval(hoverPollTimer);
+    hoverPollTimer = null;
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = null;
+    hidePopover();
+  }
 
   function threadIdFromHash() {
     const hashMatch = location.hash.match(/#(?:sent|inbox|label\/[^/]+|search\/[^/]+)\/([a-zA-Z0-9]+)/);
@@ -34,21 +61,37 @@
   }
 
   async function loadTracked() {
-    const data = await chrome.storage.local.get({ tracked: [] });
-    const seen = new Set();
-    tracked = [];
-    for (const t of data.tracked || []) {
-      if (!t?.id || seen.has(t.id)) continue;
-      seen.add(t.id);
-      tracked.push(t);
+    if (!extensionAlive()) {
+      stopAllTimers();
+      return [];
     }
-    if (tracked.length !== (data.tracked || []).length) {
-      chrome.storage.local.set({ tracked });
+    try {
+      const data = await chrome.storage.local.get({ tracked: [] });
+      const seen = new Set();
+      tracked = [];
+      for (const t of data.tracked || []) {
+        if (!t?.id || seen.has(t.id)) continue;
+        seen.add(t.id);
+        tracked.push(t);
+      }
+      if (tracked.length !== (data.tracked || []).length) {
+        await chrome.storage.local.set({ tracked });
+      }
+      return tracked;
+    } catch (e) {
+      if (isContextInvalidated(e)) {
+        stopAllTimers();
+        return [];
+      }
+      throw e;
     }
-    return tracked;
   }
 
   async function fetchOpens() {
+    if (!extensionAlive()) {
+      stopAllTimers();
+      return {};
+    }
     if (!tracked.length) {
       opensCache = {};
       return opensCache;
@@ -60,6 +103,10 @@
       );
       opensCache = await res.json();
     } catch (e) {
+      if (isContextInvalidated(e)) {
+        stopAllTimers();
+        return {};
+      }
       console.warn(LOG, "opens fetch failed", e);
     }
     return opensCache;
@@ -397,28 +444,50 @@
   }
 
   async function fetchAndPaint() {
-    await loadTracked();
-    await fetchOpens();
-    updateAllBadges();
-    paintAll();
-    if (popoverEntry) {
-      renderPopover(popoverEntry);
-      if (hoverAnchor) positionPopover(hoverAnchor);
+    if (stopped || !extensionAlive()) {
+      stopAllTimers();
+      return;
+    }
+    try {
+      await loadTracked();
+      await fetchOpens();
+      if (stopped) return;
+      updateAllBadges();
+      paintAll();
+      if (popoverEntry) {
+        renderPopover(popoverEntry);
+        if (hoverAnchor) positionPopover(hoverAnchor);
+      }
+    } catch (e) {
+      if (isContextInvalidated(e)) stopAllTimers();
+      else console.warn(LOG, "fetchAndPaint failed", e);
     }
   }
 
   function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(fetchAndPaint, 5000);
+    pollTimer = setInterval(() => {
+      if (!extensionAlive()) {
+        stopAllTimers();
+        return;
+      }
+      fetchAndPaint();
+    }, 5000);
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (stopped || !extensionAlive()) return;
     if (area === "local" && changes.tracked) fetchAndPaint();
   });
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === "refreshBadges" || msg?.type === "trackedUpdated") {
-      fetchAndPaint().then(() => sendResponse({ ok: true }));
+      fetchAndPaint()
+        .then(() => sendResponse({ ok: true }))
+        .catch((e) => {
+          if (isContextInvalidated(e)) stopAllTimers();
+          sendResponse({ ok: false });
+        });
       return true;
     }
   });
