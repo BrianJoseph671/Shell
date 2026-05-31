@@ -1,4 +1,4 @@
-const { TRACKER_BASE } = globalThis.ConchShared;
+const { TRACKER_BASE, parseEmail, isGenericRecipientName } = globalThis.ConchShared;
 const LOG = "[Magic Conch]";
 
 const BODY_SELECTORS = [
@@ -97,7 +97,7 @@ function pixelUrl(id) {
 }
 
 // Spacer pushes the pixel below Gmail inbox preview so it loads when the full message is opened.
-const SPACER_HEIGHT_PX = 1000;
+const SPACER_HEIGHT_PX = 1500;
 
 function createSpacerElement(doc) {
   const wrap = doc.createElement("div");
@@ -186,11 +186,52 @@ function findExistingTrackId() {
   return null;
 }
 
+function findComposeRootNear(el) {
+  if (!el) return null;
+  return (
+    el.closest('[role="dialog"]') ||
+    el.closest(".AD") ||
+    el.closest(".aoI") ||
+    el.closest(".M9") ||
+    el.closest("form")
+  );
+}
+
+function composeRootFromBody(body) {
+  if (!body) return null;
+  return (
+    body.closest('[role="dialog"]') ||
+    body.closest(".AD") ||
+    body.closest(".aoI") ||
+    body.closest(".M9")
+  );
+}
+
+function findToFieldContainer(composeRoot) {
+  if (!composeRoot) return null;
+  const selectors = [
+    '[name="to"]',
+    'textarea[name="to"]',
+    'input[name="to"]',
+    ".aoD",
+    ".wO",
+    '[aria-label^="To"]',
+  ];
+  for (const sel of selectors) {
+    const el = composeRoot.querySelector(sel);
+    if (!el) continue;
+    return el.closest(".aoD") || el.closest(".wO") || el.parentElement || el;
+  }
+  return composeRoot;
+}
+
 function preparePixelForSend(sendButton) {
   const body =
     (sendButton && findComposeBodyNear(sendButton)) || findFocusedComposeBody();
   if (!body) return null;
-  return injectIntoBody(body, { forceNew: true });
+  const composeRoot = (sendButton && findComposeRootNear(sendButton)) || composeRootFromBody(body);
+  const id = injectIntoBody(body, { forceNew: true });
+  return { id, composeRoot };
 }
 
 function activatePixel(id) {
@@ -219,42 +260,97 @@ function readField(root, selectors) {
   return "";
 }
 
-function readRecipient() {
-  let to = "";
+function readChipsInScope(scope, toField) {
+  let to = toField || "";
   let recipientName = "";
+  const chipRoot = findToFieldContainer(scope) || scope;
+  const chips = chipRoot.querySelectorAll(".vR, .afV, [email], [data-email]");
+  const primaryEmail = (parseEmail(to) || "").toLowerCase();
 
-  for (const doc of getAllDocuments()) {
-    const val = readField(doc, [
-      'textarea[name="to"]',
-      'input[name="to"]',
-      'input[email]',
-      '[name="to"]',
-    ]);
-    if (val) to = val;
+  for (const chip of chips) {
+    const email = (chip.getAttribute("email") || chip.getAttribute("data-email") || "").toLowerCase();
+    const nameEl = chip.querySelector(".vT, .afW, span[email]");
+    const chipName = nameEl
+      ? (nameEl.textContent || "").trim()
+      : (chip.textContent || "").replace(email, "").trim();
 
-    for (const chip of doc.querySelectorAll(".vR, .afV, [email], [data-email]")) {
+    if (email && !to.toLowerCase().includes(email)) {
+      to = to ? `${to}, ${email}` : email;
+    }
+
+    if (
+      primaryEmail &&
+      email === primaryEmail &&
+      chipName &&
+      chipName.length > 1 &&
+      !chipName.includes("@") &&
+      !isGenericRecipientName(chipName)
+    ) {
+      recipientName = chipName;
+      break;
+    }
+  }
+
+  if (!recipientName) {
+    for (const chip of chips) {
       const email = chip.getAttribute("email") || chip.getAttribute("data-email") || "";
       const nameEl = chip.querySelector(".vT, .afW, span[email]");
       const chipName = nameEl
         ? (nameEl.textContent || "").trim()
         : (chip.textContent || "").replace(email, "").trim();
 
-      if (email && !to.includes(email)) {
-        to = to ? `${to}, ${email}` : email;
-      }
-      if (chipName && chipName.length > 1 && !chipName.includes("@") && !recipientName) {
+      if (
+        chipName &&
+        chipName.length > 1 &&
+        !chipName.includes("@") &&
+        !isGenericRecipientName(chipName)
+      ) {
         recipientName = chipName;
+        break;
       }
     }
+  }
 
-    if (!recipientName && to) {
-      const angle = to.match(/^([^<]+)</);
-      if (angle) recipientName = angle[1].trim().replace(/"/g, "");
-      else if (!to.includes("@")) recipientName = to.split(",")[0].trim();
+  if (!recipientName && to) {
+    const angle = to.match(/^([^<]+)</);
+    if (angle) {
+      const n = angle[1].trim().replace(/"/g, "");
+      if (n && !isGenericRecipientName(n)) recipientName = n;
+    } else if (!to.includes("@")) {
+      const n = to.split(",")[0].trim();
+      if (n && !isGenericRecipientName(n)) recipientName = n;
     }
   }
 
   return { to, recipientName };
+}
+
+function readRecipient(composeRoot) {
+  if (composeRoot) {
+    const val = readField(composeRoot, [
+      'textarea[name="to"]',
+      'input[name="to"]',
+      'input[email]',
+      '[name="to"]',
+    ]);
+    return readChipsInScope(composeRoot, val);
+  }
+
+  for (const doc of getAllDocuments()) {
+    const dialog = doc.querySelector('[role="dialog"]');
+    const scopes = [dialog, doc.body].filter(Boolean);
+    for (const scope of scopes) {
+      const val = readField(scope, [
+        'textarea[name="to"]',
+        'input[name="to"]',
+        'input[email]',
+        '[name="to"]',
+      ]);
+      if (val) return readChipsInScope(scope, val);
+    }
+  }
+
+  return { to: "", recipientName: "" };
 }
 
 function readSubject() {
@@ -306,13 +402,13 @@ function scheduleThreadIdCapture(entryId) {
   });
 }
 
-function recordSend(id) {
+function recordSend(id, composeRoot) {
   const now = Date.now();
   if (id === lastRecordId && now - lastRecordAt < 3000) return;
   lastRecordId = id;
   lastRecordAt = now;
 
-  const { to, recipientName } = readRecipient();
+  const { to, recipientName } = readRecipient(composeRoot || null);
 
   const entry = {
     id,
@@ -382,14 +478,14 @@ function onSendAttempt(eventTarget) {
   const btn = matchSendButton(eventTarget);
   if (!btn) return;
 
-  const id = preparePixelForSend(btn);
-  if (!id) {
+  const prepared = preparePixelForSend(btn);
+  if (!prepared?.id) {
     console.warn(LOG, "Send clicked but could not find compose body");
     return;
   }
 
-  activatePixel(id);
-  recordSend(id);
+  activatePixel(prepared.id);
+  recordSend(prepared.id, prepared.composeRoot);
 }
 
 document.addEventListener("mousedown", (e) => onSendAttempt(e.target), true);
@@ -401,12 +497,23 @@ document.addEventListener(
     if (!((e.ctrlKey || e.metaKey) && e.key === "Enter")) return;
 
     const body = findFocusedComposeBody();
-    const id = body
-      ? injectIntoBody(body, { forceNew: true })
-      : preparePixelForSend(null) || injectPixelAggressive();
+    let id = null;
+    let composeRoot = null;
+    if (body) {
+      composeRoot = composeRootFromBody(body);
+      id = injectIntoBody(body, { forceNew: true });
+    } else {
+      const prepared = preparePixelForSend(null);
+      if (prepared?.id) {
+        id = prepared.id;
+        composeRoot = prepared.composeRoot;
+      } else {
+        id = injectPixelAggressive();
+      }
+    }
     if (!id) return;
     activatePixel(id);
-    recordSend(id);
+    recordSend(id, composeRoot);
   },
   true
 );

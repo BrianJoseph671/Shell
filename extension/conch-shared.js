@@ -2,10 +2,28 @@
   const TRACKER_BASE = "https://shell-kappa-lilac.vercel.app";
   const GRACE_MS = 15000;
 
+  const GENERIC_RECIPIENT_NAMES =
+    /^(university|college|school|team|support|info|admin|noreply|no-reply|mail|email|contact|helpdesk)$/i;
+
   function hasGmailThreadInReferer(referer) {
     return /#(?:inbox|sent|label\/[^/]+|search\/[^/]+)\/[a-zA-Z0-9]{10,}/i.test(
       referer || ""
     );
+  }
+
+  function isGmailReferer(referer) {
+    return (referer || "").toLowerCase().includes("mail.google.com");
+  }
+
+  function isLikelySenderView(event) {
+    const ref = (event?.referer || "").toLowerCase();
+    return ref.includes("mail.google.com") && /#sent(?:\/|$)/.test(ref);
+  }
+
+  function isRecipientGmailThreadView(event) {
+    const ref = event?.referer || "";
+    if (!isGmailReferer(ref)) return false;
+    return /#(?:inbox|search\/[^/]+|label\/[^/]+)\/[a-zA-Z0-9]{10,}/i.test(ref);
   }
 
   function isLikelyInboxPrefetch(event) {
@@ -17,6 +35,25 @@
     if (/#inbox$|#sent$/.test(ref)) return true;
     if (/#category\//.test(ref) && !hasGmailThreadInReferer(ref)) return true;
     return false;
+  }
+
+  function hasValidFetchDest(event) {
+    const dest = (event?.secFetchDest || "").toLowerCase();
+    if (!dest) return true;
+    return dest === "image";
+  }
+
+  function countsAsOpen(event) {
+    if (!hasValidFetchDest(event)) return false;
+    if (isLikelySenderView(event)) return false;
+    if (isLikelyInboxPrefetch(event)) return false;
+
+    const ref = (event?.referer || "").trim();
+    if (!ref) return false;
+
+    if (isGmailReferer(ref)) return isRecipientGmailThreadView(event);
+
+    return true;
   }
 
   function maxOpenTsForEntry(entry, allTracked) {
@@ -41,7 +78,7 @@
         typeof e.ts === "number" &&
         e.ts >= cutoff &&
         e.ts < maxTs &&
-        !isLikelyInboxPrefetch(e)
+        countsAsOpen(e)
     );
   }
 
@@ -63,12 +100,40 @@
     return email ? email[0] : "";
   }
 
+  function isGenericRecipientName(name) {
+    if (!name) return true;
+    const first = name.trim().split(/\s+/)[0];
+    if (!first) return true;
+    return GENERIC_RECIPIENT_NAMES.test(first);
+  }
+
+  function nameFromToField(to) {
+    const raw = (to || "").trim();
+    if (!raw) return "";
+
+    const parts = raw.split(",").map((p) => p.trim());
+    for (const part of parts) {
+      const angle = part.match(/^([^<]+)</);
+      if (angle) {
+        const n = angle[1].trim().replace(/"/g, "");
+        if (n && !isGenericRecipientName(n)) return n.split(/\s+/)[0];
+      }
+    }
+    return "";
+  }
+
   function displayName(entry) {
-    if (entry?.recipientName) {
-      const first = entry.recipientName.trim().split(/\s+/)[0];
+    const to = entry?.to || "";
+    const stored = entry?.recipientName;
+    if (stored && !isGenericRecipientName(stored)) {
+      const first = stored.trim().split(/\s+/)[0];
       if (first) return first;
     }
-    const email = parseEmail(entry?.to);
+
+    const fromTo = nameFromToField(to);
+    if (fromTo) return fromTo;
+
+    const email = parseEmail(to);
     if (email) return email;
     return "Recipient";
   }
@@ -79,7 +144,10 @@
     validOpens,
     opensSummary,
     maxOpenTsForEntry,
+    countsAsOpen,
     isLikelyInboxPrefetch,
+    isLikelySenderView,
+    isGenericRecipientName,
     normSubject,
     parseEmail,
     displayName,
