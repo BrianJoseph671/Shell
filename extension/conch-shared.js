@@ -23,7 +23,11 @@
   function isRecipientGmailThreadView(event) {
     const ref = event?.referer || "";
     if (!isGmailReferer(ref)) return false;
-    return /#(?:inbox|search\/[^/]+|label\/[^/]+)\/[a-zA-Z0-9]{10,}/i.test(ref);
+    return (
+      /#(?:inbox|category\/[^/]+)\/[a-zA-Z0-9]{10,}/i.test(ref) ||
+      /#search\/[^#]+\/[a-zA-Z0-9]{10,}/i.test(ref) ||
+      /#label\/[^#]+\/[a-zA-Z0-9]{10,}/i.test(ref)
+    );
   }
 
   function isLikelyInboxPrefetch(event) {
@@ -40,7 +44,8 @@
   function hasValidFetchDest(event) {
     const dest = (event?.secFetchDest || "").toLowerCase();
     if (!dest) return true;
-    return dest === "image";
+    // Gmail often omits or varies this; only block obvious non-image loads.
+    return !["document", "iframe", "object", "embed", "script", "style"].includes(dest);
   }
 
   function countsAsOpen(event) {
@@ -48,11 +53,17 @@
     if (isLikelySenderView(event)) return false;
     if (isLikelyInboxPrefetch(event)) return false;
 
-    const ref = (event?.referer || "").trim();
-    if (!ref) return false;
+    const ref = (event?.referer || "").trim().toLowerCase();
 
-    if (isGmailReferer(ref)) return isRecipientGmailThreadView(event);
+    // Browsers usually strip the #hash from Referer, so real Gmail thread opens
+    // often arrive with no referer or mail.google.com without a fragment.
+    if (!ref) return true;
 
+    if (!isGmailReferer(ref)) return true;
+
+    if (isRecipientGmailThreadView(event)) return true;
+
+    // Gmail page without hash: allow (can't distinguish); sent/list still caught above when hash present.
     return true;
   }
 

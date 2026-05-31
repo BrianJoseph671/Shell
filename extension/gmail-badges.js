@@ -3,6 +3,7 @@
 
   const { TRACKER_BASE, opensSummary, maxOpenTsForEntry, displayName, normSubject } =
     globalThis.ConchShared;
+  const OPENS_BATCH_SIZE = 20;
   const LOG = "[Magic Conch badges]";
 
   const LAPTOP_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="12" rx="1.5"/><path d="M2 19h20"/></svg>`;
@@ -88,6 +89,19 @@
     }
   }
 
+  async function fetchOpensDirect(ids) {
+    const result = {};
+    const unique = [...new Set(ids.filter(Boolean))];
+    for (let i = 0; i < unique.length; i += OPENS_BATCH_SIZE) {
+      const chunk = unique.slice(i, i + OPENS_BATCH_SIZE);
+      const url = `${TRACKER_BASE}/api/opens?ids=${encodeURIComponent(chunk.join(","))}&_=${Date.now()}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`opens HTTP ${res.status}`);
+      Object.assign(result, await res.json());
+    }
+    return result;
+  }
+
   async function fetchOpens() {
     if (!extensionAlive()) {
       stopAllTimers();
@@ -97,18 +111,26 @@
       opensCache = {};
       return opensCache;
     }
-    const ids = tracked.map((t) => t.id).join(",");
+    const ids = tracked.map((t) => t.id);
     try {
-      const res = await fetch(
-        `${TRACKER_BASE}/api/opens?ids=${encodeURIComponent(ids)}&_=${Date.now()}`
-      );
-      opensCache = await res.json();
+      const reply = await chrome.runtime.sendMessage({ type: "fetchOpens", ids });
+      if (reply?.ok && reply.data) {
+        opensCache = reply.data;
+      } else if (reply?.error) {
+        console.warn(LOG, "opens fetch failed", reply.error);
+      } else if (!reply) {
+        opensCache = await fetchOpensDirect(ids);
+      }
     } catch (e) {
       if (isContextInvalidated(e)) {
         stopAllTimers();
         return {};
       }
-      console.warn(LOG, "opens fetch failed", e);
+      try {
+        opensCache = await fetchOpensDirect(ids);
+      } catch (e2) {
+        console.warn(LOG, "opens fetch failed", e2);
+      }
     }
     return opensCache;
   }
