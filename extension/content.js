@@ -44,6 +44,54 @@ function findMessageBodies(doc) {
   });
 }
 
+function isComposeBody(body) {
+  if (!body) return false;
+  if (body.closest("div.gA.acV, div.gA.gt")) return false;
+  if (body.closest('[role="dialog"]')) return true;
+  if (body.closest(".AD, .aoI, .M9, .aoP, .I5")) return true;
+  if (body.closest(".a3s.aiL") && !body.closest(".aoP")) return false;
+  const doc = body.ownerDocument || document;
+  const active = doc.activeElement;
+  if (active && (body === active || body.contains(active))) return true;
+  const root = body.closest('[role="dialog"]') || body.closest(".AD");
+  if (root?.querySelector('[data-tooltip^="Send"], [aria-label^="Send"]')) return true;
+  return false;
+}
+
+function findComposeBodies(doc) {
+  return findMessageBodies(doc).filter(isComposeBody);
+}
+
+function findComposeBodyNear(el) {
+  if (!el) return null;
+  const roots = [
+    el.closest('[role="dialog"]'),
+    el.closest(".AD"),
+    el.closest(".aoI"),
+    el.closest(".M9"),
+    el.closest("form"),
+  ].filter(Boolean);
+
+  for (const root of roots) {
+    const doc = root.ownerDocument || document;
+    for (const body of findMessageBodies(doc)) {
+      if (root.contains(body)) return body;
+    }
+  }
+  return findFocusedComposeBody();
+}
+
+function findFocusedComposeBody() {
+  for (const doc of getAllDocuments()) {
+    const active = doc.activeElement;
+    if (!active) continue;
+    for (const body of findMessageBodies(doc)) {
+      if ((body === active || body.contains(active)) && isComposeBody(body)) return body;
+    }
+  }
+  return null;
+}
+
 function pixelUrl(id) {
   return `${TRACKER_BASE}/api/pixel?id=${encodeURIComponent(id)}`;
 }
@@ -81,9 +129,18 @@ function createSpacerElement(doc) {
   return wrap;
 }
 
-function injectIntoBody(body) {
-  const existing = body.querySelector('img[data-track-pixel="1"]');
-  if (existing) return existing.dataset.trackId;
+function injectIntoBody(body, { forceNew = false } = {}) {
+  if (forceNew) {
+    body.querySelectorAll("[data-conch-track-block]").forEach((n) => n.remove());
+  } else {
+    const img = body.querySelector('img[data-track-pixel="1"]');
+    if (img?.dataset.trackId && !img.getAttribute("src")) {
+      return img.dataset.trackId;
+    }
+    if (img) {
+      body.querySelectorAll("[data-conch-track-block]").forEach((n) => n.remove());
+    }
+  }
 
   const id = uuid();
   const doc = body.ownerDocument || document;
@@ -111,7 +168,7 @@ function injectIntoBody(body) {
 
 function injectPixelAggressive() {
   for (const doc of getAllDocuments()) {
-    for (const body of findMessageBodies(doc)) {
+    for (const body of findComposeBodies(doc)) {
       const id = injectIntoBody(body);
       if (id) return id;
     }
@@ -121,11 +178,19 @@ function injectPixelAggressive() {
 
 function findExistingTrackId() {
   for (const doc of getAllDocuments()) {
-    for (const img of doc.querySelectorAll('img[data-track-pixel="1"]')) {
-      if (img.dataset.trackId) return img.dataset.trackId;
+    for (const body of findComposeBodies(doc)) {
+      const img = body.querySelector('img[data-track-pixel="1"]');
+      if (img?.dataset.trackId) return img.dataset.trackId;
     }
   }
   return null;
+}
+
+function preparePixelForSend(sendButton) {
+  const body =
+    (sendButton && findComposeBodyNear(sendButton)) || findFocusedComposeBody();
+  if (!body) return null;
+  return injectIntoBody(body, { forceNew: true });
 }
 
 function activatePixel(id) {
@@ -317,7 +382,7 @@ function onSendAttempt(eventTarget) {
   const btn = matchSendButton(eventTarget);
   if (!btn) return;
 
-  const id = findExistingTrackId() || injectPixelAggressive();
+  const id = preparePixelForSend(btn);
   if (!id) {
     console.warn(LOG, "Send clicked but could not find compose body");
     return;
@@ -335,7 +400,10 @@ document.addEventListener(
     if (window !== window.top) return;
     if (!((e.ctrlKey || e.metaKey) && e.key === "Enter")) return;
 
-    const id = findExistingTrackId() || injectPixelAggressive();
+    const body = findFocusedComposeBody();
+    const id = body
+      ? injectIntoBody(body, { forceNew: true })
+      : preparePixelForSend(null) || injectPixelAggressive();
     if (!id) return;
     activatePixel(id);
     recordSend(id);

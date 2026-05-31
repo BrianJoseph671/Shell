@@ -1,7 +1,8 @@
 (function () {
   if (window !== window.top) return;
 
-  const { TRACKER_BASE, opensSummary, displayName, normSubject } = globalThis.ConchShared;
+  const { TRACKER_BASE, opensSummary, maxOpenTsForEntry, displayName, normSubject } =
+    globalThis.ConchShared;
   const LOG = "[Magic Conch badges]";
 
   const LAPTOP_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="12" rx="1.5"/><path d="M2 19h20"/></svg>`;
@@ -114,25 +115,73 @@
 
   function statusFor(entry) {
     const raw = opensCache[entry.id] || { events: [] };
-    const { count, last, valid } = opensSummary(raw.events || [], entry.sentAt);
+    const maxTs = maxOpenTsForEntry(entry, tracked);
+    const { count, last, valid } = opensSummary(raw.events || [], entry.sentAt, { maxTs });
     return { count, last, valid, read: count > 0 };
   }
 
-  function findEntryForThreadId(threadId) {
-    if (!threadId) return null;
-    const matches = tracked.filter((t) => t.threadId === threadId);
-    if (matches.length === 1) return matches[0];
-    if (matches.length > 1) return matches.sort((a, b) => b.sentAt - a.sentAt)[0];
-    return null;
+  function pickClosestBySentAt(candidates, approxSentAt) {
+    if (!candidates.length) return null;
+    if (candidates.length === 1) return candidates[0];
+    if (!approxSentAt) {
+      return candidates.sort((a, b) => b.sentAt - a.sentAt)[0];
+    }
+    return candidates.sort(
+      (a, b) => Math.abs(a.sentAt - approxSentAt) - Math.abs(b.sentAt - approxSentAt)
+    )[0];
   }
 
-  function findEntryForSubject(subjectText) {
+  function findEntryForThreadId(threadId, approxSentAt) {
+    if (!threadId) return null;
+    const matches = tracked.filter((t) => t.threadId === threadId);
+    return pickClosestBySentAt(matches, approxSentAt);
+  }
+
+  function findEntryForSubject(subjectText, approxSentAt) {
     const norm = normSubject(subjectText);
     if (!norm) return null;
     const candidates = tracked.filter((t) => normSubject(t.subject) === norm);
     if (!candidates.length) return null;
-    candidates.sort((a, b) => b.sentAt - a.sentAt);
-    return candidates[0];
+    if (candidates.length === 1) return candidates[0];
+    if (!approxSentAt) return null;
+    return pickClosestBySentAt(candidates, approxSentAt);
+  }
+
+  function parseDomTime(el) {
+    if (!el) return null;
+    for (const attr of ["title", "data-tooltip", "aria-label"]) {
+      const raw = el.getAttribute?.(attr) || "";
+      if (!raw) continue;
+      const ts = Date.parse(raw);
+      if (!Number.isNaN(ts)) return ts;
+    }
+    return null;
+  }
+
+  function parseRowSentTime(row) {
+    const dateEl =
+      row.querySelector("span.bq3") ||
+      row.querySelector("td.xW span") ||
+      row.querySelector("span[title*='20']") ||
+      row.querySelector("span[title]");
+    return parseDomTime(dateEl);
+  }
+
+  function parseBlockSentTime(block) {
+    const dateEl =
+      block.querySelector("span.g3") ||
+      block.querySelector("span.gK") ||
+      block.querySelector(".g3") ||
+      block.querySelector("span[title]");
+    return parseDomTime(dateEl);
+  }
+
+  function getThreadHeaderSentTime() {
+    const dateEl =
+      document.querySelector(".gH .g3") ||
+      document.querySelector(".gH span[title]") ||
+      document.querySelector(".ha .g3");
+    return parseDomTime(dateEl);
   }
 
   function getRowThreadId(row) {
@@ -146,12 +195,13 @@
   }
 
   function findEntryForRow(row) {
+    const approx = parseRowSentTime(row);
     const tid = getRowThreadId(row);
-    const byThread = findEntryForThreadId(tid);
+    const byThread = findEntryForThreadId(tid, approx);
     if (byThread) return byThread;
 
     const subject = getRowSubject(row);
-    return findEntryForSubject(subject);
+    return findEntryForSubject(subject, approx);
   }
 
   function fmtSuperhuman(ts) {
@@ -388,7 +438,8 @@
 
   function paintThreadHeader() {
     const tid = threadIdFromHash();
-    let entry = findEntryForThreadId(tid);
+    const approx = getThreadHeaderSentTime();
+    let entry = findEntryForThreadId(tid, approx);
 
     if (!entry) {
       const header =
@@ -396,7 +447,7 @@
         document.querySelector("[data-legacy-thread-id]")?.closest("div")?.querySelector("h2") ||
         document.querySelector(".ha h2");
       if (header) {
-        entry = findEntryForSubject((header.textContent || "").trim());
+        entry = findEntryForSubject((header.textContent || "").trim(), approx);
       }
     }
 
@@ -411,16 +462,18 @@
 
   function paintThreadSentMessages() {
     const tid = threadIdFromHash();
-    let entry = findEntryForThreadId(tid);
-
-    if (!entry) {
-      const header = document.querySelector("h2.hP");
-      if (header) entry = findEntryForSubject((header.textContent || "").trim());
-    }
-    if (!entry) return;
+    const header = document.querySelector("h2.hP");
+    const headerSubject = (header?.textContent || "").trim();
 
     const sentBlocks = document.querySelectorAll("div.gA.acV, div.gA.gt");
     for (const block of sentBlocks) {
+      const approx = parseBlockSentTime(block);
+      let entry = findEntryForThreadId(tid, approx);
+      if (!entry && headerSubject) {
+        entry = findEntryForSubject(headerSubject, approx);
+      }
+      if (!entry) continue;
+
       const sender =
         block.querySelector("span.gD") ||
         block.querySelector("span.go") ||
