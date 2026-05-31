@@ -16,16 +16,6 @@
   margin-left: 4px;
 }
 
-.conch-diamond {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border: 1px solid #9aa0a6;
-  transform: rotate(45deg);
-  box-sizing: border-box;
-  flex-shrink: 0;
-}
-
 .conch-checks {
   display: inline-flex;
   flex-direction: column;
@@ -49,10 +39,6 @@
   font-size: 9px;
   color: #9aa0a6;
   line-height: 1;
-}
-
-.conch-receipt.sent .conch-diamond {
-  display: none;
 }
 
 /* Hover popover — compact, hidden by default */

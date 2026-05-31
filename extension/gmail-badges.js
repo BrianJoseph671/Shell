@@ -273,13 +273,6 @@
     wrap.className = `conch-receipt ${st.read ? "read" : "sent"} ${placement || ""}`;
     wrap.setAttribute("data-conch-id", entry.id);
 
-    if (st.read) {
-      const diamond = document.createElement("span");
-      diamond.className = "conch-diamond";
-      diamond.setAttribute("aria-hidden", "true");
-      wrap.appendChild(diamond);
-    }
-
     wrap.appendChild(makeChecks(st.read));
 
     wrap.addEventListener("mouseenter", () => showPopover(wrap, entry));
@@ -295,16 +288,6 @@
     const st = statusFor(entry);
     wrap.classList.toggle("read", st.read);
     wrap.classList.toggle("sent", !st.read);
-
-    let diamond = wrap.querySelector(".conch-diamond");
-    if (st.read && !diamond) {
-      diamond = document.createElement("span");
-      diamond.className = "conch-diamond";
-      diamond.setAttribute("aria-hidden", "true");
-      wrap.insertBefore(diamond, wrap.firstChild);
-    } else if (!st.read && diamond) {
-      diamond.remove();
-    }
 
     const oldChecks = wrap.querySelector(".conch-checks, .conch-check-single");
     if (oldChecks) oldChecks.remove();
